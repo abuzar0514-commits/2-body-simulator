@@ -3,229 +3,348 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Two-Body Gravitational Simulator (RK4)</title>
+  <title>N-Body 3D Gravitational Simulator (Three.js & RK4)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #121212;
+      background: #0d0d0d;
       color: #e0e0e0;
       display: flex;
       height: 100vh;
       overflow: hidden;
     }
     #sidebar {
-      width: 320px;
-      background: #1e1e1e;
-      padding: 20px;
+      width: 340px;
+      background: #181818;
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 15px;
+      gap: 12px;
       overflow-y: auto;
-      border-right: 1px solid #333;
+      border-right: 1px solid #2d2d2d;
+      z-index: 10;
     }
-    h2 { font-size: 1.2rem; color: #fff; margin-bottom: 5px; }
-    .control-group {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-    label { font-size: 0.85rem; color: #aaa; }
-    input[type="number"], input[type="range"] {
-      background: #2a2a2a;
-      border: 1px solid #444;
+    h2 { font-size: 1.1rem; color: #fff; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    .control-group { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 0.8rem; color: #aaa; }
+    input[type="number"], input[type="text"], input[type="range"], select {
+      background: #242424;
+      border: 1px solid #3d3d3d;
       color: #fff;
-      padding: 6px 10px;
+      padding: 5px 8px;
       border-radius: 4px;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
-    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
     button {
       flex: 1;
-      padding: 8px 12px;
-      background: #3a3a3a;
+      padding: 7px 10px;
+      background: #333;
       color: #fff;
       border: none;
       border-radius: 4px;
       cursor: pointer;
       font-weight: 600;
+      font-size: 0.8rem;
       transition: background 0.2s;
     }
-    button:hover { background: #4a4a4a; }
+    button:hover { background: #444; }
     button.primary { background: #2563eb; }
     button.primary:hover { background: #1d4ed8; }
-    .stats {
-      background: #141414;
-      padding: 12px;
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    .body-card {
+      background: #202020;
+      border: 1px solid #333;
       border-radius: 6px;
-      font-size: 0.8rem;
-      font-family: monospace;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       gap: 6px;
-      border: 1px solid #282828;
+      font-size: 0.8rem;
     }
-    .stat-row { display: flex; justify-content: space-between; }
-    #canvas-container {
-      flex: 1;
-      position: relative;
-      background: #000;
-    }
+    .body-card-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+    #canvas-container { flex: 1; position: relative; background: #000; }
     canvas { width: 100%; height: 100%; display: block; }
+    .overlay-info {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      pointer-events: none;
+      border: 1px solid #333;
+    }
   </style>
+  <!-- Three.js and OrbitControls via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
   <div id="sidebar">
-    <h2>2-Body Simulator</h2>
-    
+    <h2>N-Body 3D Simulator</h2>
+
     <div class="control-group">
       <label>Presets</label>
       <div class="btn-group">
-        <button onclick="loadPreset('sunEarth')">Sun-Earth</button>
-        <button onclick="loadPreset('earthMoon')">Earth-Moon</button>
-        <button onclick="loadPreset('binary')">Equal Binary</button>
+        <button onclick="loadPreset('sunEarthMoon')">Sun-Earth-Moon</button>
+        <button onclick="loadPreset('innerSolarSystem')">Inner Planets</button>
+        <button onclick="loadPreset('figure8')">3-Body Figure 8</button>
       </div>
     </div>
 
     <div class="control-group">
-      <label for="m1">Mass 1 (kg)</label>
-      <input type="number" id="m1" value="1.989e30" step="any">
-    </div>
-
-    <div class="control-group">
-      <label for="m2">Mass 2 (kg)</label>
-      <input type="number" id="m2" value="5.972e24" step="any">
-    </div>
-
-    <div class="control-group">
-      <label for="dist">Initial Distance (m)</label>
-      <input type="number" id="dist" value="1.496e11" step="any">
-    </div>
-
-    <div class="control-group">
-      <label for="v2">Initial Velocity Body 2 (m/s)</label>
-      <input type="number" id="v2" value="29780" step="any">
-    </div>
-
-    <div class="control-group">
-      <label for="simSpeed">Steps per Frame: <span id="speedVal">500</span></label>
-      <input type="range" id="simSpeed" min="1" max="2000" value="500" oninput="document.getElementById('speedVal').innerText=this.value">
+      <label for="simSpeed">Steps / Frame: <span id="speedVal">400</span></label>
+      <input type="range" id="simSpeed" min="1" max="2000" value="400" oninput="document.getElementById('speedVal').innerText=this.value">
     </div>
 
     <div class="btn-group">
       <button class="primary" id="playBtn" onclick="togglePlay()">Pause</button>
       <button onclick="resetSimulation()">Reset</button>
+      <button onclick="addBodyUI()">+ Add Body</button>
     </div>
 
-    <div class="stats">
-      <div class="stat-row"><span>Kinetic Energy:</span><span id="keVal">0 J</span></div>
-      <div class="stat-row"><span>Potential Energy:</span><span id="peVal">0 J</span></div>
-      <div class="stat-row"><span>Total Energy:</span><span id="totVal">0 J</span></div>
-    </div>
+    <h2>System Bodies (<span id="bodyCount">0</span>)</h2>
+    <div id="bodiesList"></div>
   </div>
 
   <div id="canvas-container">
-    <canvas id="simCanvas"></canvas>
+    <div class="overlay-info">
+      <div>🖱️ Left-Click + Drag: Rotate Camera</div>
+      <div>🖱️ Right-Click + Drag: Pan Camera</div>
+      <div>📜 Scroll: Zoom In/Out</div>
+    </div>
   </div>
 
   <script>
     const G = 6.67430e-11;
-    const canvas = document.getElementById('simCanvas');
-    const ctx = canvas.getContext('2d');
-
-    let state = { x1: 0, y1: 0, vx1: 0, vy1: 0, x2: 0, y2: 0, vx2: 0, vy2: 0, m1: 0, m2: 0 };
-    let dt = 100;
+    let scene, camera, renderer, controls;
+    let bodies = [];
     let isRunning = true;
-    let trail1 = [];
-    let trail2 = [];
-    const MAX_TRAIL = 1200;
+    let dt = 100;
+    let visualScale = 1e-9;
+    const MAX_TRAIL = 1000;
 
-    function resizeCanvas() {
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
+    const container = document.getElementById('canvas-container');
+
+    function init3D() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x050508);
+
+      camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+      camera.position.set(0, 150, 300);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(100, 200, 100);
+      scene.add(dirLight);
+
+      window.addEventListener('resize', onWindowResize);
     }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
 
-    function loadPreset(type) {
-      if (type === 'sunEarth') {
-        document.getElementById('m1').value = "1.989e30";
-        document.getElementById('m2').value = "5.972e24";
-        document.getElementById('dist').value = "1.496e11";
-        document.getElementById('v2').value = "29780";
-      } else if (type === 'earthMoon') {
-        document.getElementById('m1').value = "5.972e24";
-        document.getElementById('m2').value = "7.348e22";
-        document.getElementById('dist').value = "3.844e8";
-        document.getElementById('v2').value = "1022";
-      } else if (type === 'binary') {
-        document.getElementById('m1').value = "1e30";
-        document.getElementById('m2').value = "1e30";
-        document.getElementById('dist').value = "1e11";
-        document.getElementById('v2').value = "18200";
+    function onWindowResize() {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    class Body {
+      constructor(name, mass, color, x, y, z, vx, vy, vz, radiusPx = 4) {
+        this.name = name;
+        this.mass = mass;
+        this.color = color;
+        this.pos = new THREE.Vector3(x, y, z);
+        this.vel = new THREE.Vector3(vx, vy, vz);
+        this.radiusPx = radiusPx;
+
+        // Three.js Mesh
+        const geometry = new THREE.SphereGeometry(radiusPx, 24, 24);
+        const material = new THREE.MeshStandardMaterial({
+          color: color,
+          emissive: color,
+          emissiveIntensity: 0.3,
+          roughness: 0.4
+        });
+        this.mesh = new THREE.Mesh(geometry, material);
+        scene.add(this.mesh);
+
+        // Trail Line
+        this.trailPositions = [];
+        this.trailGeometry = new THREE.BufferGeometry();
+        const trailMaterial = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+        this.trailLine = new THREE.Line(this.trailGeometry, trailMaterial);
+        scene.add(this.trailLine);
+      }
+
+      destroy() {
+        scene.remove(this.mesh);
+        scene.remove(this.trailLine);
+        this.mesh.geometry.dispose();
+        this.mesh.material.dispose();
+        this.trailGeometry.dispose();
+        this.trailLine.material.dispose();
+      }
+
+      updateMeshPosition() {
+        this.mesh.position.copy(this.pos).multiplyScalar(visualScale);
+
+        // Update Trails
+        this.trailPositions.push(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z);
+        if (this.trailPositions.length > MAX_TRAIL * 3) {
+          this.trailPositions.splice(0, 3);
+        }
+        this.trailGeometry.setAttribute('position', new THREE.Float32BufferAttribute(this.trailPositions, 3));
+        this.trailGeometry.computeBoundingSphere();
+      }
+    }
+
+    function loadPreset(preset) {
+      clearBodies();
+      if (preset === 'sunEarthMoon') {
+        bodies.push(new Body('Sun', 1.989e30, 0xfacc15, 0, 0, 0, 0, 0, 0, 8));
+        bodies.push(new Body('Earth', 5.972e24, 0x38bdf8, 1.496e11, 0, 0, 0, 29780, 0, 4));
+        bodies.push(new Body('Moon', 7.348e22, 0xe2e8f0, 1.496e11 + 3.844e8, 0, 0, 0, 29780 + 1022, 0, 2));
+      } else if (preset === 'innerSolarSystem') {
+        bodies.push(new Body('Sun', 1.989e30, 0xfacc15, 0, 0, 0, 0, 0, 0, 9));
+        bodies.push(new Body('Mercury', 3.301e23, 0xa1a1aa, 5.79e10, 0, 0, 0, 47360, 0, 2.5));
+        bodies.push(new Body('Venus', 4.867e24, 0xfb923c, 1.082e11, 0, 0, 0, 35020, 0, 3.5));
+        bodies.push(new Body('Earth', 5.972e24, 0x38bdf8, 1.496e11, 0, 0, 0, 29780, 0, 4));
+        bodies.push(new Body('Mars', 6.417e23, 0xef4444, 2.279e11, 0, 0, 0, 24070, 0, 3));
+      } else if (preset === 'figure8') {
+        const m = 1e30;
+        const scaleDist = 1e11;
+        const scaleVel = 15000;
+        bodies.push(new Body('Body A', m, 0xf43f5e, -0.97000436 * scaleDist, 0.24308753 * scaleDist, 0, 0.46620531 * scaleVel, 0.43236573 * scaleVel, 0, 5));
+        bodies.push(new Body('Body B', m, 0x10b981, 0.97000436 * scaleDist, -0.24308753 * scaleDist, 0, 0.46620531 * scaleVel, 0.43236573 * scaleVel, 0, 5));
+        bodies.push(new Body('Body C', m, 0x6366f1, 0, 0, 0, -2 * 0.46620531 * scaleVel, -2 * 0.43236573 * scaleVel, 0, 5));
       }
       resetSimulation();
     }
 
-    function resetSimulation() {
-      const m1 = parseFloat(document.getElementById('m1').value);
-      const m2 = parseFloat(document.getElementById('m2').value);
-      const dist = parseFloat(document.getElementById('dist').value);
-      const v2 = parseFloat(document.getElementById('v2').value);
-
-      state.m1 = m1;
-      state.m2 = m2;
-      state.x1 = 0; state.y1 = 0; state.vx1 = 0; state.vy1 = 0;
-      state.x2 = dist; state.y2 = 0; state.vx2 = 0; state.vy2 = v2;
-
-      // Transform to Center of Mass Frame
-      const totalM = m1 + m2;
-      const x_cm = (m1 * state.x1 + m2 * state.x2) / totalM;
-      const y_cm = (m1 * state.y1 + m2 * state.y2) / totalM;
-      const vx_cm = (m1 * state.vx1 + m2 * state.vx2) / totalM;
-      const vy_cm = (m1 * state.vy1 + m2 * state.vy2) / totalM;
-
-      state.x1 -= x_cm; state.y1 -= y_cm;
-      state.x2 -= x_cm; state.y2 -= y_cm;
-      state.vx1 -= vx_cm; state.vy1 -= vy_cm;
-      state.vx2 -= vx_cm; state.vy2 -= vy_cm;
-
-      dt = Math.max(1.0, dist / 1e8);
-      trail1 = [];
-      trail2 = [];
+    function clearBodies() {
+      bodies.forEach(b => b.destroy());
+      bodies = [];
     }
 
-    function derivatives(s) {
-      const dx = s[4] - s[0];
-      const dy = s[5] - s[1];
-      const r3 = Math.pow(dx * dx + dy * dy, 1.5);
-      if (r3 === 0) return new Array(8).fill(0);
+    function transformToCenterOfMass() {
+      let totalM = 0;
+      let comPos = new THREE.Vector3();
+      let comVel = new THREE.Vector3();
 
-      const ax1 = G * state.m2 * dx / r3;
-      const ay1 = G * state.m2 * dy / r3;
-      const ax2 = -G * state.m1 * dx / r3;
-      const ay2 = -G * state.m1 * dy / r3;
+      bodies.forEach(b => {
+        totalM += b.mass;
+        comPos.addScaledVector(b.pos, b.mass);
+        comVel.addScaledVector(b.vel, b.mass);
+      });
 
-      return [s[2], s[3], ax1, ay1, s[6], s[7], ax2, ay2];
+      if (totalM === 0) return;
+      comPos.divideScalar(totalM);
+      comVel.divideScalar(totalM);
+
+      bodies.forEach(b => {
+        b.pos.sub(comPos);
+        b.vel.sub(comVel);
+      });
+    }
+
+    function resetSimulation() {
+      transformToCenterOfMass();
+
+      // Dynamic scaling for 3D viewport
+      let maxDist = 0;
+      bodies.forEach(b => {
+        maxDist = Math.max(maxDist, b.pos.length());
+      });
+      visualScale = 120 / (maxDist || 1e11);
+      dt = Math.max(1.0, (maxDist || 1e11) / 1e8);
+
+      bodies.forEach(b => {
+        b.trailPositions = [];
+        b.updateMeshPosition();
+      });
+
+      renderUI();
+    }
+
+    function getDerivatives(stateArr) {
+      const N = bodies.length;
+      const ds = new Float64Array(N * 6);
+
+      for (let i = 0; i < N; i++) {
+        const i6 = i * 6;
+        ds[i6] = stateArr[i6 + 3];
+        ds[i6 + 1] = stateArr[i6 + 4];
+        ds[i6 + 2] = stateArr[i6 + 5];
+
+        let ax = 0, ay = 0, az = 0;
+        for (let j = 0; j < N; j++) {
+          if (i === j) continue;
+          const j6 = j * 6;
+          const dx = stateArr[j6] - stateArr[i6];
+          const dy = stateArr[j6 + 1] - stateArr[i6 + 1];
+          const dz = stateArr[j6 + 2] - stateArr[i6 + 2];
+          const distSq = dx * dx + dy * dy + dz * dz + 1e5; // Softening parameter
+          const dist = Math.sqrt(distSq);
+          const factor = (G * bodies[j].mass) / (distSq * dist);
+
+          ax += dx * factor;
+          ay += dy * factor;
+          az += dz * factor;
+        }
+
+        ds[i6 + 3] = ax;
+        ds[i6 + 4] = ay;
+        ds[i6 + 5] = az;
+      }
+      return ds;
     }
 
     function rk4Step(h) {
-      let y = [state.x1, state.y1, state.vx1, state.vy1, state.x2, state.y2, state.vx2, state.vy2];
-      
-      const k1 = derivatives(y);
-      const y1 = y.map((v, i) => v + 0.5 * h * k1[i]);
-      const k2 = derivatives(y1);
-      const y2 = y.map((v, i) => v + 0.5 * h * k2[i]);
-      const k3 = derivatives(y2);
-      const y3 = y.map((v, i) => v + h * k3[i]);
-      const k4 = derivatives(y3);
+      const N = bodies.length;
+      let y = new Float64Array(N * 6);
 
-      for (let i = 0; i < 8; i++) {
-        y[i] += (h / 6.0) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
+      for (let i = 0; i < N; i++) {
+        const i6 = i * 6;
+        y[i6] = bodies[i].pos.x;
+        y[i6 + 1] = bodies[i].pos.y;
+        y[i6 + 2] = bodies[i].pos.z;
+        y[i6 + 3] = bodies[i].vel.x;
+        y[i6 + 4] = bodies[i].vel.y;
+        y[i6 + 5] = bodies[i].vel.z;
       }
 
-      state.x1 = y[0]; state.y1 = y[1]; state.vx1 = y[2]; state.vy1 = y[3];
-      state.x2 = y[4]; state.y2 = y[5]; state.vx2 = y[6]; state.vy2 = y[7];
+      const k1 = getDerivatives(y);
+      const y1 = y.map((v, idx) => v + 0.5 * h * k1[idx]);
+      const k2 = getDerivatives(y1);
+      const y2 = y.map((v, idx) => v + 0.5 * h * k2[idx]);
+      const k3 = getDerivatives(y2);
+      const y3 = y.map((v, idx) => v + h * k3[idx]);
+      const k4 = getDerivatives(y3);
+
+      for (let i = 0; i < N; i++) {
+        const i6 = i * 6;
+        bodies[i].pos.x += (h / 6) * (k1[i6] + 2 * k2[i6] + 2 * k3[i6] + k4[i6]);
+        bodies[i].pos.y += (h / 6) * (k1[i6 + 1] + 2 * k2[i6 + 1] + 2 * k3[i6 + 1] + k4[i6 + 1]);
+        bodies[i].pos.z += (h / 6) * (k1[i6 + 2] + 2 * k2[i6 + 2] + 2 * k3[i6 + 2] + k4[i6 + 2]);
+        bodies[i].vel.x += (h / 6) * (k1[i6 + 3] + 2 * k2[i6 + 3] + 2 * k3[i6 + 3] + k4[i6 + 3]);
+        bodies[i].vel.y += (h / 6) * (k1[i6 + 4] + 2 * k2[i6 + 4] + 2 * k3[i6 + 4] + k4[i6 + 4]);
+        bodies[i].vel.z += (h / 6) * (k1[i6 + 5] + 2 * k2[i6 + 5] + 2 * k3[i6 + 5] + k4[i6 + 5]);
+      }
     }
 
     function updatePhysics() {
@@ -233,66 +352,7 @@
       for (let i = 0; i < steps; i++) {
         rk4Step(dt);
       }
-      trail1.push({ x: state.x1, y: state.y1 });
-      trail2.push({ x: state.x2, y: state.y2 });
-      if (trail1.length > MAX_TRAIL) { trail1.shift(); trail2.shift(); }
-    }
-
-    function draw() {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      const dx = state.x2 - state.x1;
-      const dy = state.y2 - state.y1;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const viewScale = Math.min(canvas.width, canvas.height) / (dist * 3.2 || 1);
-
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-
-      const toScreenX = (x) => cx + x * viewScale;
-      const toScreenY = (y) => cy - y * viewScale;
-
-      // Draw Orbit Trails
-      ctx.lineWidth = 1.5;
-      if (trail1.length > 1) {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(toScreenX(trail1[0].x), toScreenY(trail1[0].y));
-        for (let p of trail1) ctx.lineTo(toScreenX(p.x), toScreenY(p.y));
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(251, 146, 60, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(toScreenX(trail2[0].x), toScreenY(trail2[0].y));
-        for (let p of trail2) ctx.lineTo(toScreenX(p.x), toScreenY(p.y));
-        ctx.stroke();
-      }
-
-      // Draw Celestial Bodies
-      const r1 = Math.max(5, Math.min(18, Math.log10(state.m1) * 0.5));
-      const r2 = Math.max(3, Math.min(15, Math.log10(state.m2) * 0.5));
-
-      ctx.fillStyle = '#38bdf8';
-      ctx.beginPath();
-      ctx.arc(toScreenX(state.x1), toScreenY(state.y1), r1, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#fb923c';
-      ctx.beginPath();
-      ctx.arc(toScreenX(state.x2), toScreenY(state.y2), r2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Energy Readouts
-      const v1Sq = state.vx1 ** 2 + state.vy1 ** 2;
-      const v2Sq = state.vx2 ** 2 + state.vy2 ** 2;
-      const ke = 0.5 * state.m1 * v1Sq + 0.5 * state.m2 * v2Sq;
-      const pe = -G * state.m1 * state.m2 / (dist || 1);
-      const tot = ke + pe;
-
-      document.getElementById('keVal').innerText = ke.toExponential(3) + ' J';
-      document.getElementById('peVal').innerText = pe.toExponential(3) + ' J';
-      document.getElementById('totVal').innerText = tot.toExponential(3) + ' J';
+      bodies.forEach(b => b.updateMeshPosition());
     }
 
     function togglePlay() {
@@ -300,14 +360,50 @@
       document.getElementById('playBtn').innerText = isRunning ? 'Pause' : 'Play';
     }
 
-    function gameLoop() {
-      if (isRunning) updatePhysics();
-      draw();
-      requestAnimationFrame(gameLoop);
+    function addBodyUI() {
+      const hexColor = Math.floor(Math.random() * 16777215);
+      bodies.push(new Body(`Body ${bodies.length + 1}`, 1e24, hexColor, 1e11, 0, 0, 0, 25000, 0, 4));
+      resetSimulation();
     }
 
-    resetSimulation();
-    gameLoop();
+    function removeBody(index) {
+      bodies[index].destroy();
+      bodies.splice(index, 1);
+      resetSimulation();
+    }
+
+    function renderUI() {
+      document.getElementById('bodyCount').innerText = bodies.length;
+      const list = document.getElementById('bodiesList');
+      list.innerHTML = '';
+
+      bodies.forEach((b, i) => {
+        const card = document.createElement('div');
+        card.className = 'body-card';
+        card.innerHTML = `
+          <div class="body-card-header">
+            <span style="color: #${b.color.toString(16).padStart(6, '0')}">● ${b.name}</span>
+            <button class="danger" style="flex:0; padding:2px 6px;" onclick="removeBody(${i})">✕</button>
+          </div>
+          <div>Mass: ${b.mass.toExponential(2)} kg</div>
+          <div>Pos: [${(b.pos.x/1e9).toFixed(1)}, ${(b.pos.y/1e9).toFixed(1)}, ${(b.pos.z/1e9).toFixed(1)}] GW</div>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (isRunning && bodies.length > 0) {
+        updatePhysics();
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    init3D();
+    loadPreset('sunEarthMoon');
+    animate();
   </script>
 </body>
 </html>
