@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-Body Gravitational Simulator (RK4)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 320px;
+      background: #1e1e1e;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      overflow-y: auto;
+      border-right: 1px solid #333;
+    }
+    h2 { font-size: 1.2rem; color: #fff; margin-bottom: 5px; }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label { font-size: 0.85rem; color: #aaa; }
+    input[type="number"], input[type="range"] {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      flex: 1;
+      padding: 8px 12px;
+      background: #3a3a3a;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    button:hover { background: #4a4a4a; }
+    button.primary { background: #2563eb; }
+    button.primary:hover { background: #1d4ed8; }
+    .stats {
+      background: #141414;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border: 1px solid #282828;
+    }
+    .stat-row { display: flex; justify-content: space-between; }
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h2>2-Body Simulator</h2>
+    
+    <div class="control-group">
+      <label>Presets</label>
+      <div class="btn-group">
+        <button onclick="loadPreset('sunEarth')">Sun-Earth</button>
+        <button onclick="loadPreset('earthMoon')">Earth-Moon</button>
+        <button onclick="loadPreset('binary')">Equal Binary</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label for="m1">Mass 1 (kg)</label>
+      <input type="number" id="m1" value="1.989e30" step="any">
+    </div>
+
+    <div class="control-group">
+      <label for="m2">Mass 2 (kg)</label>
+      <input type="number" id="m2" value="5.972e24" step="any">
+    </div>
+
+    <div class="control-group">
+      <label for="dist">Initial Distance (m)</label>
+      <input type="number" id="dist" value="1.496e11" step="any">
+    </div>
+
+    <div class="control-group">
+      <label for="v2">Initial Velocity Body 2 (m/s)</label>
+      <input type="number" id="v2" value="29780" step="any">
+    </div>
+
+    <div class="control-group">
+      <label for="simSpeed">Steps per Frame: <span id="speedVal">500</span></label>
+      <input type="range" id="simSpeed" min="1" max="2000" value="500" oninput="document.getElementById('speedVal').innerText=this.value">
+    </div>
+
+    <div class="btn-group">
+      <button class="primary" id="playBtn" onclick="togglePlay()">Pause</button>
+      <button onclick="resetSimulation()">Reset</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-row"><span>Kinetic Energy:</span><span id="keVal">0 J</span></div>
+      <div class="stat-row"><span>Potential Energy:</span><span id="peVal">0 J</span></div>
+      <div class="stat-row"><span>Total Energy:</span><span id="totVal">0 J</span></div>
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="simCanvas"></canvas>
+  </div>
+
+  <script>
+    const G = 6.67430e-11;
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let state = { x1: 0, y1: 0, vx1: 0, vy1: 0, x2: 0, y2: 0, vx2: 0, vy2: 0, m1: 0, m2: 0 };
+    let dt = 100;
+    let isRunning = true;
+    let trail1 = [];
+    let trail2 = [];
+    const MAX_TRAIL = 1200;
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function loadPreset(type) {
+      if (type === 'sunEarth') {
+        document.getElementById('m1').value = "1.989e30";
+        document.getElementById('m2').value = "5.972e24";
+        document.getElementById('dist').value = "1.496e11";
+        document.getElementById('v2').value = "29780";
+      } else if (type === 'earthMoon') {
+        document.getElementById('m1').value = "5.972e24";
+        document.getElementById('m2').value = "7.348e22";
+        document.getElementById('dist').value = "3.844e8";
+        document.getElementById('v2').value = "1022";
+      } else if (type === 'binary') {
+        document.getElementById('m1').value = "1e30";
+        document.getElementById('m2').value = "1e30";
+        document.getElementById('dist').value = "1e11";
+        document.getElementById('v2').value = "18200";
+      }
+      resetSimulation();
+    }
+
+    function resetSimulation() {
+      const m1 = parseFloat(document.getElementById('m1').value);
+      const m2 = parseFloat(document.getElementById('m2').value);
+      const dist = parseFloat(document.getElementById('dist').value);
+      const v2 = parseFloat(document.getElementById('v2').value);
+
+      state.m1 = m1;
+      state.m2 = m2;
+      state.x1 = 0; state.y1 = 0; state.vx1 = 0; state.vy1 = 0;
+      state.x2 = dist; state.y2 = 0; state.vx2 = 0; state.vy2 = v2;
+
+      // Transform to Center of Mass Frame
+      const totalM = m1 + m2;
+      const x_cm = (m1 * state.x1 + m2 * state.x2) / totalM;
+      const y_cm = (m1 * state.y1 + m2 * state.y2) / totalM;
+      const vx_cm = (m1 * state.vx1 + m2 * state.vx2) / totalM;
+      const vy_cm = (m1 * state.vy1 + m2 * state.vy2) / totalM;
+
+      state.x1 -= x_cm; state.y1 -= y_cm;
+      state.x2 -= x_cm; state.y2 -= y_cm;
+      state.vx1 -= vx_cm; state.vy1 -= vy_cm;
+      state.vx2 -= vx_cm; state.vy2 -= vy_cm;
+
+      dt = Math.max(1.0, dist / 1e8);
+      trail1 = [];
+      trail2 = [];
+    }
+
+    function derivatives(s) {
+      const dx = s[4] - s[0];
+      const dy = s[5] - s[1];
+      const r3 = Math.pow(dx * dx + dy * dy, 1.5);
+      if (r3 === 0) return new Array(8).fill(0);
+
+      const ax1 = G * state.m2 * dx / r3;
+      const ay1 = G * state.m2 * dy / r3;
+      const ax2 = -G * state.m1 * dx / r3;
+      const ay2 = -G * state.m1 * dy / r3;
+
+      return [s[2], s[3], ax1, ay1, s[6], s[7], ax2, ay2];
+    }
+
+    function rk4Step(h) {
+      let y = [state.x1, state.y1, state.vx1, state.vy1, state.x2, state.y2, state.vx2, state.vy2];
+      
+      const k1 = derivatives(y);
+      const y1 = y.map((v, i) => v + 0.5 * h * k1[i]);
+      const k2 = derivatives(y1);
+      const y2 = y.map((v, i) => v + 0.5 * h * k2[i]);
+      const k3 = derivatives(y2);
+      const y3 = y.map((v, i) => v + h * k3[i]);
+      const k4 = derivatives(y3);
+
+      for (let i = 0; i < 8; i++) {
+        y[i] += (h / 6.0) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
+      }
+
+      state.x1 = y[0]; state.y1 = y[1]; state.vx1 = y[2]; state.vy1 = y[3];
+      state.x2 = y[4]; state.y2 = y[5]; state.vx2 = y[6]; state.vy2 = y[7];
+    }
+
+    function updatePhysics() {
+      const steps = parseInt(document.getElementById('simSpeed').value);
+      for (let i = 0; i < steps; i++) {
+        rk4Step(dt);
+      }
+      trail1.push({ x: state.x1, y: state.y1 });
+      trail2.push({ x: state.x2, y: state.y2 });
+      if (trail1.length > MAX_TRAIL) { trail1.shift(); trail2.shift(); }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const dx = state.x2 - state.x1;
+      const dy = state.y2 - state.y1;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const viewScale = Math.min(canvas.width, canvas.height) / (dist * 3.2 || 1);
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      const toScreenX = (x) => cx + x * viewScale;
+      const toScreenY = (y) => cy - y * viewScale;
+
+      // Draw Orbit Trails
+      ctx.lineWidth = 1.5;
+      if (trail1.length > 1) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(trail1[0].x), toScreenY(trail1[0].y));
+        for (let p of trail1) ctx.lineTo(toScreenX(p.x), toScreenY(p.y));
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(trail2[0].x), toScreenY(trail2[0].y));
+        for (let p of trail2) ctx.lineTo(toScreenX(p.x), toScreenY(p.y));
+        ctx.stroke();
+      }
+
+      // Draw Celestial Bodies
+      const r1 = Math.max(5, Math.min(18, Math.log10(state.m1) * 0.5));
+      const r2 = Math.max(3, Math.min(15, Math.log10(state.m2) * 0.5));
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(toScreenX(state.x1), toScreenY(state.y1), r1, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#fb923c';
+      ctx.beginPath();
+      ctx.arc(toScreenX(state.x2), toScreenY(state.y2), r2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Energy Readouts
+      const v1Sq = state.vx1 ** 2 + state.vy1 ** 2;
+      const v2Sq = state.vx2 ** 2 + state.vy2 ** 2;
+      const ke = 0.5 * state.m1 * v1Sq + 0.5 * state.m2 * v2Sq;
+      const pe = -G * state.m1 * state.m2 / (dist || 1);
+      const tot = ke + pe;
+
+      document.getElementById('keVal').innerText = ke.toExponential(3) + ' J';
+      document.getElementById('peVal').innerText = pe.toExponential(3) + ' J';
+      document.getElementById('totVal').innerText = tot.toExponential(3) + ' J';
+    }
+
+    function togglePlay() {
+      isRunning = !isRunning;
+      document.getElementById('playBtn').innerText = isRunning ? 'Pause' : 'Play';
+    }
+
+    function gameLoop() {
+      if (isRunning) updatePhysics();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    resetSimulation();
+    gameLoop();
+  </script>
+</body>
+</html>
